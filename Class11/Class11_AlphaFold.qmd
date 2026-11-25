@@ -1,6 +1,6 @@
 ---
 title: "Class11_AlphaFold"
-format: pdf
+format: gfm
 editor: visual
 author: "Joaquin Jalova Arig"
 toc: TRUE
@@ -148,6 +148,7 @@ pdbs2
 rd2 <- rmsd(pdbs2, fit=T)
 range(rd2)
 ```
+
 ```{r}
 library(pheatmap)
 
@@ -188,6 +189,7 @@ Plot this conservation result
 ```{r}
 plot(sim2, typ = "h")
 ```
+
 ```{r}
 con2 <- consensus (aln2, cutoff = 0.88)
 con2$seq
@@ -265,6 +267,7 @@ rf3 <- rmsf(pdbs3$xyz)
 plot.bio3d(rf3)
 
 ```
+
 ### Residue Conservation
 
 ```{r}
@@ -275,6 +278,7 @@ aln_file3
 
 aln3 <- read.fasta(aln_file3[1], to.upper = TRUE)
 ```
+
 ```{r}
 sim3 <- conserv(aln3)
 ```
@@ -282,6 +286,7 @@ sim3 <- conserv(aln3)
 ```{r}
 plot(sim3, typ = "h")
 ```
+
 ```{r}
 con3 <- consensus (aln3, cutoff = 0.90)
 con3$seq
@@ -314,4 +319,3 @@ points(pdbs3$b[4, ], typ = "l", col = "darkgreen")
 points(pdbs3$b[5, ], typ = "l", col = "orange")
 
 ```
-
