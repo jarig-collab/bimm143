@@ -1,0 +1,44 @@
+---
+title: "Class09: Structural Bioinformatics"
+format: html
+editor: visual
+author: Joaquin Jalova
+---
+
+## Background
+The [PDB database] is the main repository of biomolecular structure information. Let's have a look at the composition of this database:
+
+Visit PDB and click:
+Analyze > PDB Statistics > Experimental Method > Summary
+
+We can "scape" data from this page with the **datapasta** that we can install from CRAN `install.packages("datapasta")`
+
+```{r, echo=FALSE}
+pdbstats <- data.frame(
+  stringsAsFactors = FALSE,
+       check.names = FALSE,
+                Molecular.Type = c("Protein (only)","Protein/Oligosaccharide",
+                                   "Protein/NA","Nucleic acid (only)","Other",
+                                   "Oligosaccharide (only)","Total"),
+         `X-ray.▼` = c(184731, 10716, 9341, 3216, 178, 11, 208193),
+                EM = c(25754, 4037, 7520, 347, 27, 1, 37686),
+               NMR = c(12904, 34, 288, 1599, 35, 6, 14866),
+       Integrative = c(365L, 8L, 27L, 3L, 4L, 0L, 407L),
+  Multiple.methods = c(232L, 11L, 8L, 15L, 0L, 1L, 267L),
+           Neutron = c(86L, 1L, 0L, 3L, 0L, 0L, 90L),
+             Other = c(32L, 0L, 0L, 1L, 0L, 4L, 37L),
+             Total = c(224104, 14807, 17184, 5184, 244, 23, 261546)
+            )
+```
+
+>**Q1:** What percentage of structures in the PDB are solved by X-Ray and Electron Microscopy.
+
+```{r}
+(sum(pdbstats$`X-ray.▼`) / sum(pdbstats$Total)) * 100
+(sum(pdbstats$EM) / sum(pdbstats$Total)) * 100
+```
+
+
+>**Q2:** What proportion of structures in the PDB are protein?
+
+>**Q3:** Type HIV in the PDB website search box on the home page and determine how many HIV-1 protease structures are in the current PDB?

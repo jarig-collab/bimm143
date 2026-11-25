@@ -1,0 +1,343 @@
+---
+title: "Class08_MiniProj"
+author: Joaquin Jalova Arig
+format: pdf
+editor: visual
+toc: TRUE
+---
+
+## Background
+
+The goal of this mini-project is for you to explore a complete analysis using the unsupervised learning techniques covered in class. You’ll extend what you’ve learned by combining PCA as a preprocessing step to clustering using data that consist of measurements of cell nuclei of human breast masses. This expands on our UK food and RNA-Seq analysis from last day
+
+Today we will analyze a biopsy data-set from fine needle aspiration (FNA)
+
+## Data Import
+
+The data is made available as a CSV file for download. We can read this with the `read.csv()` function
+
+```{r}
+fna.data <- "WisconsinCancer.csv"
+wisc.df <- read.csv(fna.data, row.names = 1)
+
+```
+
+```{r}
+head(wisc.df, 4)
+```
+
+Save the expert "diagnosis" for use later when we have our results from PCA, etc. and remove this column from the data we actually use for our analysis
+```{r}
+# Create diagnosis vector for later
+diagnosis <- wisc.df$diagnosis
+
+# We can use -1 here to remove the first column
+wisc.data <- wisc.df[,-1]
+
+head(wisc.data, 3)
+```
+
+## Exploratory Data Analysis
+
+Before diving into PCA or clustering, take a few minutes to understand the structure of your data—how many samples, how many features, and whether there are any obvious issues like missing values or unexpected column types.
+
+Explore the data you created before (wisc.data and diagnosis) to answer the following questions:
+
+> **Q1.** How many observations are in this data set?
+
+```{r}
+nrow(wisc.data)
+```
+> **Q2.** How many of the observations have a malignant diagnosis?
+
+```{r}
+sum(wisc.df$diagnosis == "M")
+table(wisc.df$diagnosis)
+```
+
+> **Q3.** How many variables/features in the data are suffixed with _mean?
+
+```{r}
+colnames(wisc.data)
+```
+```{r}
+length(grep("_mean", colnames(wisc.data)))
+```
+
+## Principal Component Analysis
+
+### Performing PCA
+
+Check the mean and standard deviation of the features (i.e. columns) of the wisc.data to determine if the data should be scaled. Use the colMeans() and apply() functions like you’ve done before.
+
+```{r}
+# Check column means and standard deviations
+colMeans(wisc.data)
+apply(wisc.data,2,sd)
+```
+```{r}
+# Perform PCA on wisc.data by completing the following code
+wisc.pr <- prcomp(wisc.data, scale = T)
+```
+
+```{r}
+# Look at summary of results
+summary(wisc.pr)
+```
+
+> **Q4.** From your results, what proportion of the original variance is captured by the first principal component (PC1)?
+
+>> A: 0.4427
+
+> **Q5.** How many principal components (PCs) are required to describe at least 70% of the original variance in the data?
+
+>> A: 3
+
+> **Q6.** How many principal components (PCs) are required to describe at least 90% of the original variance in the data?
+
+>> A: 7
+
+### Interpreting PCA Results
+
+Now you will use some visualizations to better understand your PCA model. A common visualization for PCA results is the so-called biplot.
+
+Create a biplot of the wisc.pr using the `biplot()` function.
+
+```{r}
+biplot(wisc.pr)
+```
+> **Q7.** What stands out to you about this plot? Is it easy or difficult to understand? Why?
+
+>> A: The byplot shows each data point as numerical values which appear to be concentrated in one area. Since these are numerical values in a plot, this plot is difficult to understand because it's hard to see where the actual data are.
+
+> **Q8.** Generate a similar plot for principal components 1 and 3. What do you notice about these plots?
+
+```{r}
+# Scatter plot observations by components 1 and 3
+library(ggplot2)
+ggplot(wisc.pr$x) +
+  aes(PC1, PC3, col=diagnosis) +
+  geom_point()
+```
+>> A: These plots display a more standard scatter plot of each observation along principal components 1 and 3, and color the points by the diagnosis (available in the diagnosis vector we created earlier). Overall, the plots indicate that principal component 1 is capturing a separation of malignant (turquoise) from benign (red) samples. 
+
+### Variance Explained
+
+A scree plot shows how much variance each PC captures. We typically look for an “elbow” — a point where adding more PCs gives diminishing returns. This can help us decide how many PCs to consider for further analysis. (Spoiler: some real data sets don’t have a perfect elbow, so folks will often use a threshold like 70% or 90% cumulative variance instead.)
+
+```{r}
+# Calculate variance of each component
+pr.var <- wisc.pr$sdev^2
+head(pr.var)
+```
+```{r}
+# Variance explained by each principal component: pve
+pve <- pr.var / sum(pr.var)
+
+# Plot variance explained for each principal component
+plot(c(1,pve), xlab = "Principal Component", 
+     ylab = "Proportion of Variance Explained", 
+     ylim = c(0, 1), type = "o")
+```
+```{r}
+# Alternative scree plot of the same data, note data driven y-axis
+barplot(pve, ylab = "Percent of Variance Explained",
+     names.arg=paste0("PC",1:length(pve)), las=2, axes = FALSE)
+axis(2, at=pve, labels=round(pve,2)*100 )
+```
+### Communicating PCA results
+
+> **Q9.** For the first principal component, what is the component of the loading vector (i.e. wisc.pr$rotation[,1]) for the feature concave.points_mean? This tells us how much this original feature contributes to the first PC. Are there any features with larger contributions than this one? 
+
+```{r}
+wisc.pr$rotation["concave.points_mean", 1]
+
+sort(abs(wisc.pr$rotation[, 1]), decreasing = TRUE)
+```
+
+>> A: The PC1 loading for concave.points_mean is -0.2608538. When all PC1 loadings are sorted by absolute value, concave.points_mean has the largest contribution, so no other feature contributes more to PC1.
+
+## Hierarchical Clustering
+
+The goal of this section is to do hierarchical clustering of the original datato see if there is any obvious grouping into malignant and benign clusters.
+
+Recall from class that hierarchical clustering does not assume in advance the number of natural groups that exist in the data (unlike K-means clustering).
+
+As part of the preparation for hierarchical clustering, the distance between all pairs of observations needs to be calculated. This “distance matrix” will be the input for the hclust() function.
+
+One of the optional arguments to hclust() allows you to pick different ways (a.k.a. “methods”) to link clusters together, with single, complete, and average being the most common “linkage methods”. You can explore the effectes of these different methods in this section.
+
+First scale the wisc.data data and assign the result to data.scaled.
+
+```{r}
+# Scale the wisc.data data using the "scale()" function
+data.scaled <- scale(wisc.data)
+
+# Next, calculate the (Euclidean) distances between all pairs of observations in the new scaled dataset and assign the result to data.dist.
+data.dist <- dist(data.scaled)
+
+#Create a hierarchical clustering model using complete linkage. Manually specify the method argument to hclust() and assign the results to wisc.hclust.
+wisc.hclust <- hclust(data.dist, method = "complete")
+
+```
+
+Let’s use the hierarchical clustering model you just created to determine a height (or distance between clusters) where a certain number of clusters exists.
+
+### Results of Hierarchical Clustering
+
+> **Q10.** Using the plot() and abline() functions, what is the height at which the clustering model has 4 clusters?
+
+```{r}
+plot(wisc.hclust)
+abline(h=19, col="red", lty=2)
+```
+
+### Selected number of clusters
+
+Normally in unsupervised learning we don’t have labels to check our work against. Here we’re lucky—the pathologist’s diagnosis lets us evaluate whether our clusters correspond to something biologically meaningful. Let’s see how well the clustering separates malignant from benign samples.
+
+```{r}
+# Use cutree() to cut the tree so that it has 4 clusters. Assign the output to the variable wisc.hclust.clusters.
+wisc.hclust.clusters <- cutree(wisc.hclust, k = 4)
+
+# We can use the table() function to compare the cluster membership to the actual diagnoses.
+table(wisc.hclust.clusters, diagnosis)
+
+# Here we picked four clusters and see that cluster 1 largely corresponds to malignant cells (with diagnosis values of “M”) whilst cluster 3 largely corresponds to benign cells (with diagnosis values of “B”).
+
+```
+
+>**Q11.** [OPTIONAL]: Can you find a better cluster vs diagnoses match by cutting into a different number of clusters between 2 and 6? How do you judge the quality of your result in each case?
+
+As we discussed in our last class videos there are number of different “methods” we can use to combine points during the hierarchical clustering procedure. These include "single", "complete", "average" and (my favorite) "ward.D2".
+
+>**Q12.** Which method gives your favorite results for the same data.dist dataset? Explain your reasoning.
+
+```{r}
+# Single
+hc.single <- hclust(data.dist, method = "single")
+plot(hc.single, main = "Single", labels = FALSE)
+table(cutree(hc.single, k = 2), diagnosis)
+
+# Complete
+hc.complete <- hclust(data.dist, method = "complete")
+plot(hc.complete, main = "complete", labels = FALSE)
+table(cutree(hc.complete, k = 2), diagnosis)
+
+# Average
+hc.average <- hclust(data.dist, method = "average")
+plot(hc.average, main = "average", labels = FALSE)
+table(cutree(hc.average, k = 2), diagnosis)
+
+# ward.D2
+hc.ward.D2 <- hclust(data.dist, method = "ward.D2")
+plot(hc.ward.D2, main = "hc.ward.D2", labels = FALSE)
+table(cutree(hc.ward.D2, k = 2), diagnosis)
+```
+
+>> A: "ward.D2" gives the best results for the data set. It clearly classifies malignant and benign into two separate clusters, which is reflected by the dendogram that has two distinct branches.
+
+## Combining Methods
+
+### Clustering on PCA Results
+
+Using the minimum number of principal components required to describe at least 90% of the variability in the data, create a hierarchical clustering model with the linkage method="ward.D2". We use Ward’s criterion here because it is based on multidimensional variance like principal components analysis. Assign the results to wisc.pr.hclust.
+
+This looks much more promising than our previous clustering results on the original scaled data. Note the two main branches of our dendrogram indicating two main clusters - maybe these are malignant and benign. Let’s find out!
+
+```{r}
+
+wisc.pr.hclust <- hclust(dist(wisc.pr$x[, 1:7]), method = "ward.D2")
+
+grps <- cutree(wisc.pr.hclust, k=2)
+table(grps)
+```
+```{r}
+# Cross table to show how many B and M reside in each of my two clusters
+table(grps, diagnosis)
+```
+
+```{r}
+ggplot(wisc.pr$x) +
+  aes(PC1, PC2) +
+  geom_point(col=grps)
+```
+```{r}
+# Cut this hierarchical clustering model into 2 clusters and assign the results to wisc.pr.hclust.clusters.
+
+wisc.pr.hclust.clusters <- cutree(wisc.pr.hclust, k=2)
+```
+
+Using table(), compare the results from your new hierarchical clustering model with the actual diagnoses.
+
+> **Q13.** How well does the newly created hclust model with two clusters separate out the two “M” and “B” diagnoses?
+
+```{r}
+
+# Compare to actual diagnoses
+table(wisc.pr.hclust.clusters, diagnosis)
+
+```
+
+>> A: The PCA-based ward.D2 model separates the diagnoses well. Cluster 1 is mostly malignant (188 M vs. 28 B) and cluster 2 is mostly benign (329 B vs. 24 M)
+
+> **Q14.** How well do the hierarchical clustering models you created in the previous sections (i.e. without first doing PCA) do in terms of separating the diagnoses? Again, use the table() function to compare the output of each model (wisc.hclust.clusters and wisc.pr.hclust.clusters) with the vector containing the actual diagnoses.
+
+```{r}
+
+table(wisc.hclust.clusters, diagnosis)
+
+```
+
+>> A: The hierarchical clustering models we created in the previous sections separate the diagnoses fairly well, but it needs 4 clusters, compared to only 2 clusters in Q13. The two additional clusters aren't too useful, with very small sample sizes.
+
+## Sensitivity / Specificity
+
+**Sensitivity** refers to a test’s ability to correctly detect ill patients who do have the condition. In our example here the sensitivity is the total number of samples in the cluster identified as predominantly malignant (cancerous) divided by the total number of known malignant samples. In other words: TP/(TP+FN).
+
+**Specificity** relates to a test’s ability to correctly reject healthy patients without a condition. In our example specificity is the proportion of benign (not cancerous) samples in the cluster identified as predominantly benign that are known to be benign. In other words: TN/(TN+FP).
+
+> **Q15.** [OPTIONAL]: Which of your analysis procedures resulted in a clustering model with the best specificity? How about sensitivity?
+
+## Prediction
+
+We will use the `predict()` function that will take our PCA model from before and new cancer cell data and project that data onto our PCA space.
+
+```{r}
+#url <- "new_samples.csv"
+url <- "https://tinyurl.com/new-samples-CSV"
+new <- read.csv(url)
+npc <- predict(wisc.pr, newdata=new)
+npc
+```
+
+```{r}
+plot(wisc.pr$x[,1:2], col=grps)
+points(npc[,1], npc[,2], col="blue", pch=16, cex=3)
+text(npc[,1], npc[,2], c(1,2), col="white")
+```
+>**Q16.** Which of these new patients should we prioritize for follow up based on your results?
+
+>> a: Patient 2, because they have samples that appear malignant
+
+## Summary
+
+In this mini-project, you applied unsupervised learning techniques to real-world cancer cell data from fine needle aspiration biopsies. You learned how to:
+
+- Apply PCA to reduce dimensionality while retaining meaningful variance
+- Interpret PCA results through scree plots, score plots and loading vectors (the 3 main result figures from PCA)
+- Perform hierarchical clustering with different linkage methods
+- Combine PCA with clustering for improved separation of sample groups
+- Evaluate clustering performance using sensitivity and specificity metrics
+- Use your trained PCA model to make predictions on new patient samples
+
+A key takeaway is that preprocessing with PCA before clustering often yields better results than clustering on raw data alone. This workflow (dimensionality reduction followed by clustering) is widely used in biomedical research for tasks like patient stratification, biomarker discovery, and disease subtyping.
+
+## About this Document
+
+Here we use the `sessionInfo()` function to report on our R systems setup at the time of document execution.
+
+```{r}
+sessionInfo()
+```
+

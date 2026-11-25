@@ -1,0 +1,76 @@
+---
+title: "Class06HW"
+author: Joaquin Jalova Arig
+format: pdf
+editor: visual
+---
+
+```{r}
+# (A. Can you improve this analysis code?
+df <- data.frame(a=1:10, b=seq(200,400,length=10),c=11:20,d=NA)
+df$a <- (df$a - min(df$a)) / (max(df$a) - min(df$a))
+df$b <- (df$b - min(df$a)) / (max(df$b) - min(df$b))
+df$c <- (df$c - min(df$c)) / (max(df$c) - min(df$c))
+df$d <- (df$d - min(df$d)) / (max(df$a) - min(df$d))
+```
+
+```{r}
+# Can you improve this analysis code?
+library(bio3d)
+s1 <- read.pdb("4AKE") # kinase with drug
+s2 <- read.pdb("1AKE") # kinase no drug
+s3 <- read.pdb("1E4Y") # kinase with drug
+s1.chainA <- trim.pdb(s1, chain="A", elety="CA")
+s2.chainA <- trim.pdb(s2, chain="A", elety="CA")
+s3.chainA <- trim.pdb(s1, chain="A", elety="CA")
+s1.b <- s1.chainA$atom$b
+s2.b <- s2.chainA$atom$b
+s3.b <- s3.chainA$atom$b
+plotb3(s1.b, sse=s1.chainA, typ="l", ylab="Bfactor")
+plotb3(s2.b, sse=s2.chainA, typ="l", ylab="Bfactor")
+plotb3(s3.b, sse=s3.chainA, typ="l", ylab="Bfactor")
+```
+
+> **Q6.** How would you generalize the original code above to work with any set of input
+protein structures? Write your own function starting from the code above that analyzes protein drug interactions by reading in any protein PDB data and outputs a plot for the specified protein.
+
+```{r}
+plot_bf <- function(pdb_id, chain = "A", elety = "CA") {
+  pdb <- read.pdb(pdb_id)
+  
+  #   pdb_id - a 4-character PDB code (e.g. "4AKE") or a path to a PDB file
+  #   chain  - which chain to analyze (default "A")
+  #   elety  - atom type to keep (default "CA", alpha carbons = one atom per residue)
+  
+  # Keep only the requested chain and atom type
+  chain_atom <- trim.pdb(pdb, chain = chain, elety = elety)
+ 
+  # Extract the B-factor for each residue
+  bf <- chain_atom$atom$b
+
+  # Plot B-factors with secondary structure in the margins
+  plotb3(bf, sse = chain_atom, typ = "l", ylab = "Bfactor",
+         
+  # paste() glues words together with spaces.Example, for 1E4Y the title reads “B-factors for 1E4Y chain A” - Please note that I used assistance from AI to add this line to enhance the plots
+         
+         main = paste("B-factors for", pdb_id, "chain", chain))
+}
+```
+
+```{r}
+
+# Example: run the function on the three kinase structures
+
+# Type in any of the three kinases
+plot_bf("1E4Y")
+
+# Several proteins at once, without repeating the code
+ids <- c("4AKE", "1AKE", "1E4Y")
+
+# Loop over each PDB ID and make its B-factor plot
+for (id in ids) {
+  plot_bf(id)
+}
+```
+
+

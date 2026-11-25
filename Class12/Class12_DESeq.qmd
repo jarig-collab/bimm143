@@ -1,0 +1,334 @@
+---
+title: "Class 12: Transcriptomics and RNA-Seq"
+format: pdf
+editor: visual
+author: "Joaquin Jalova Arig"
+toc: TRUE
+
+---
+
+## Background
+
+The data for this lab come from Himes et al. (2014), where airway smooth muscle cells were treated with dexamethasone (a synthetic glucocorticoid). Here we analyze the count data with DESeq2 to find genes that change expression after treatment.
+
+
+```{r}
+library(DESeq2)
+library(dplyr)
+```
+
+## 3. Import countData and colData
+
+`airway_scaledcounts.csv` and `airway_metadata.csv` must be in the project folder.
+
+```{r}
+counts <- read.csv("airway_scaledcounts.csv", row.names = 1)
+metadata <- read.csv("airway_metadata.csv")
+
+head(counts)
+head(metadata)
+```
+
+>>**Q1.** How many genes are in this dataset?
+
+```{r}
+nrow(counts)
+```
+
+>>**Q2.** How many 'control' cell lines do we have?
+
+```{r}
+sum(metadata$dex == "control")
+```
+
+## 4. Toy differential gene expression
+
+This section is for demonstration only. Do not use this approach for real analysis, because it ignores variance between samples.
+
+Mean counts for the control samples, the hard-coded way the lab shows first:
+
+```{r}
+control <- metadata[metadata[, "dex"] == "control", ]
+control.counts <- counts[, control$id]
+control.mean <- rowSums(control.counts) / 4
+head(control.mean)
+```
+
+The same thing with dplyr:
+
+```{r}
+library(dplyr)
+control <- metadata %>% filter(dex == "control")
+control.counts <- counts %>% select(control$id)
+control.mean <- rowSums(control.counts) / 4
+head(control.mean)
+```
+
+>>**Q3.** How would you make the above code in either approach more robust?
+
+The original code divides by 4 because there happen to be 4 control samples. If samples get added or removed, that number is wrong and the means come out wrong without any error. A safer way is rowMeans(), which divides by however many columns are actually there.
+
+```{r}
+control.mean <- rowMeans(counts[, metadata$dex == "control"])
+head(control.mean)
+```
+
+>>**Q4.** Follow the same procedure for the treated samples (i.e. calculate the mean per gene across drug-treated samples and assign to a labeled vector called `treated.mean`).
+
+```{r}
+treated.mean <- rowMeans(counts[, metadata$dex == "treated"])
+head(treated.mean)
+```
+
+We will combine our meancount data for bookkeeping purposes.
+
+```{r}
+meancounts <- data.frame(control.mean, treated.mean)
+colSums(meancounts)
+```
+
+>>**Q5a.** Create a scatter plot showing the mean of the treated samples against the mean of the control samples.
+
+```{r}
+plot(meancounts[, 1], meancounts[, 2], xlab = "Control", ylab = "Treated")
+```
+
+>>**Q5b.** You could also use the ggplot2 package to make this figure. What `geom_?()` function would you use for this plot?
+
+`geom_point()`
+
+```{r}
+library(ggplot2)
+ggplot(meancounts, aes(control.mean, treated.mean)) +
+    geom_point(alpha = 0.3)
+```
+
+>>**Q6.** Try plotting both axes on a log scale. What is the argument to `plot()` that allows you to do this?
+
+`log = "xy"`
+
+```{r}
+plot(meancounts[, 1], meancounts[, 2], log = "xy",
+     xlab = "log Control", ylab = "log Treated")
+```
+
+In ggplot:
+
+```{r}
+ggplot(meancounts, aes(control.mean, treated.mean)) +
+  geom_point(alpha = 0.3) +
+  scale_x_continuous(trans = "log10") +
+  scale_y_continuous(trans = "log10")
+```
+
+Here we calculate log2foldchange, add it to our meancounts data.frame and inspect the results either with the head() or the View() function for example.
+
+```{r}
+meancounts$log2fc <- log2(meancounts[,"treated.mean"]/meancounts[,"control.mean"])
+head(meancounts)
+```
+
+There are a couple of “weird” results. Namely, the NaN (“not a number”) and -Inf (negative infinity) results.
+
+The NaN is returned when you divide by zero and try to take the log. The -Inf is returned when you try to take the log of zero. It turns out that there are a lot of genes with zero expression. Let’s filter our data to remove these genes. Again inspect your result (and the intermediate steps) to see if things make sense to you
+
+```{r}
+zero.vals <- which(meancounts[, 1:2] == 0, arr.ind = TRUE)
+
+to.rm <- unique(zero.vals[, 1])
+mycounts <- meancounts[-to.rm, ]
+head(mycounts)
+nrow(mycounts)
+```
+
+>>**Q7.** What is the purpose of the `arr.ind` argument in the `which()` function call above? Why would we then take the first column of the output and need to call the `unique()` function?
+
+Normally `which()` gives back one long list of positions. With `arr.ind` = TRUE it tells us the row and the column of every zero, so we can see which gene had the zero and in which group. We only care about the gene, so we keep the first column (the row numbers). If a gene has zeros in both the control and treated columns, it shows up twice, so `unique()` removes the repeats and each gene gets dropped only once.
+
+
+A common threshold used for calling something differentially expressed is a log2(FoldChange) of greater than 2 or less than -2. Let’s filter the dataset both ways to see how many genes are up or down-regulated.
+
+```{r}
+up.ind <- mycounts$log2fc > 2
+down.ind <- mycounts$log2fc < (-2)
+```
+
+>>**Q8.** Using the `up.ind` vector above, can you determine how many up-regulated genes we have at the greater than 2 fc level?
+
+```{r}
+sum(up.ind)
+```
+
+**Q9.** Using the `down.ind` vector above, can you determine how many down-regulated genes we have at the greater than 2 fc level?
+
+```{r}
+sum(down.ind)
+```
+
+**Q10. Do you trust these results? Why or why not?**
+
+Not really. So far we’ve only looked at how big the change is between the average control and treated counts. We haven’t checked whether that change is real or just noise. A gene with really low counts can show a huge fold change from a tiny difference, and if the samples within a group vary a lot, the average can be misleading. To trust these results we need a statistical test that accounts for that variation and gives us p-values, which is what DESeq2 does.
+
+## 5. Setting up for DESeq
+
+```{r}
+library(DESeq2)
+citation("DESeq2")
+```
+
+```{r}
+dds <- DESeqDataSetFromMatrix(countData = counts,
+                              colData = metadata,
+                              design = ~dex)
+dds
+```
+
+## 6. Principal Component Analysis (PCA)
+
+Before running DESeq analysis we can look how the count data samples are related to one another via our old friend Principal Component Analysis (PCA). We will follow the DESeq recommended procedure and associated functions for PCA. First calling `vst()` to apply a variance stabilizing transformation (read more about this in the expandable section below) and then `plotPCA()` to calculate our PCs and plot the results.
+
+```{r}
+vsd <- vst(dds, blind = FALSE)
+plotPCA(vsd, intgroup = c("dex"))
+```
+
+We can also build the PCA plot from scratch using the ggplot2 package. This is done by asking the plotPCA function to return the data used for plotting rather than building the plot.
+
+```{r}
+pcaData <- plotPCA(vsd, intgroup = c("dex"), returnData = TRUE)
+head(pcaData)
+
+# Calculate percent variance per PC for the plot axis labels
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+
+ggplot(pcaData) +
+  aes(x = PC1, y = PC2, color = dex) +
+  geom_point(size = 3) +
+  xlab(paste0("PC1: ", percentVar[1], "% variance")) +
+  ylab(paste0("PC2: ", percentVar[2], "% variance")) +
+  coord_fixed() +
+  theme_bw()
+```
+
+## 7. DESeq analysis
+
+```{r}
+dds <- DESeq(dds)
+```
+
+```{r}
+res <- results(dds)
+res
+```
+
+```{r}
+summary(res)
+```
+
+Results with a stricter adjusted p-value cutoff of 0.05:
+
+```{r}
+res05 <- results(dds, alpha = 0.05)
+summary(res05)
+```
+
+## 8. Adding annotation data
+
+```{r}
+library(AnnotationDbi)
+library(org.Hs.eg.db)
+
+columns(org.Hs.eg.db)
+```
+
+```{r}
+res$symbol <- mapIds(org.Hs.eg.db,
+                     keys = row.names(res),
+                     keytype = "ENSEMBL",
+                     column = "SYMBOL",
+                     multiVals = "first")
+head(res)
+```
+
+>>**Q11.** Run the `mapIds()` function two more times to add the Entrez ID and UniProt accession and GENENAME as new columns called `res$entrez`, `res$uniprot` and `res$genename`.
+
+```{r}
+res$entrez <- mapIds(org.Hs.eg.db,
+                     keys = row.names(res),
+                     keytype = "ENSEMBL",
+                     column = "ENTREZID",
+                     multiVals = "first")
+
+res$uniprot <- mapIds(org.Hs.eg.db,
+                      keys = row.names(res),
+                      keytype = "ENSEMBL",
+                      column = "UNIPROT",
+                      multiVals = "first")
+
+res$genename <- mapIds(org.Hs.eg.db,
+                       keys = row.names(res),
+                       keytype = "ENSEMBL",
+                       column = "GENENAME",
+                       multiVals = "first")
+
+head(res)
+```
+
+You can arrange and view the results by the adjusted p-value
+
+```{r}
+ord <- order(res$padj)
+head(res[ord, ])
+
+# save
+write.csv(res[ord, ], "deseq_results.csv")
+```
+
+## 9. Data visualization
+
+```{r}
+plot(res$log2FoldChange, -log(res$padj),
+     xlab = "Log2(FoldChange)",
+     ylab = "-Log(P-value)")
+```
+To make this more useful we can add some guidelines (with the abline() function) and color (with a custom color vector) highlighting genes that have padj<0.05 and the absolute log2FoldChange>2.
+
+```{r}
+plot(res$log2FoldChange, -log(res$padj),
+     ylab = "-Log(P-value)", xlab = "Log2(FoldChange)")
+
+abline(v = c(-2, 2), col = "darkgray", lty = 2)
+abline(h = -log(0.05), col = "darkgray", lty = 2)
+```
+
+Color the points of interest:
+
+```{r}
+mycols <- rep("gray", nrow(res))
+mycols[abs(res$log2FoldChange) > 2] <- "red"
+
+inds <- (res$padj < 0.01) & (abs(res$log2FoldChange) > 2)
+mycols[inds] <- "blue"
+
+plot(res$log2FoldChange, -log(res$padj), col = mycols,
+     ylab = "-Log(P-value)", xlab = "Log2(FoldChange)")
+
+abline(v = c(-2, 2), col = "gray", lty = 2)
+abline(h = -log(0.1), col = "gray", lty = 2)
+```
+
+For even more customization you might find the EnhancedVolcano bioconductor package useful (Note. It uses ggplot under the hood):
+
+First we will add the more understandable gene symbol names to our full results object res as we will use this to label the most interesting genes in our final plot.
+
+
+```{r}
+library(EnhancedVolcano)
+
+x <- as.data.frame(res)
+
+EnhancedVolcano(x,
+                lab = x$symbol,
+                x = "log2FoldChange",
+                y = "pvalue")
+```
